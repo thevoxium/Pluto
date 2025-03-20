@@ -1,0 +1,3 @@
+*.md 
+temp
+__pycache__

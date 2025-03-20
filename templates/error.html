@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error | Pluto</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+  <div class="container error-container">
+    <header>
+      <div class="logo-container">
+        <a href="/" class="home-link">
+          <i class="fas fa-planet-ringed logo-icon"></i>
+          <h1>Pluto</h1>
+        </a>
+      </div>
+    </header>
+
+    <main class="error-content">
+      <div class="error-icon">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <h2>Oops! Something went wrong</h2>
+      <p class="error-message">{{ message }}</p>
+      <a href="/" class="button-primary">
+        <i class="fas fa-home"></i> Back to Home
+      </a>
+    </main>
+
+    <footer>
+      <p>Powered by Pluto AI Research</p>
+    </footer>
+  </div>
+</body>
+
+</html>

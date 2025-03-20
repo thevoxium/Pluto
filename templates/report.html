@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} | Pluto</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+</head>
+
+<body>
+  <div class="container report-container">
+    <header class="report-header">
+      <div class="logo-container">
+        <a href="/" class="home-link">
+          <i class="fas fa-planet-ringed logo-icon-sm"></i>
+          <h2>Pluto</h2>
+        </a>
+      </div>
+      <div class="report-actions">
+        <a href="/download/{{ task_id }}" class="action-button">
+          <i class="fas fa-download"></i> Download
+        </a>
+        <button id="print-report" class="action-button">
+          <i class="fas fa-print"></i> Print
+        </button>
+        <a href="/" class="action-button">
+          <i class="fas fa-plus"></i> New Research
+        </a>
+      </div>
+    </header>
+
+    <main class="report-content">
+      <div class="markdown-body">
+        {{ html_content|safe }}
+      </div>
+    </main>
+
+    <footer>
+      <p>Powered by Pluto AI Research</p>
+    </footer>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <script>
+    // Initialize syntax highlighting
+    document.addEventListener('DOMContentLoaded', (event) => {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightBlock(block);
+      });
+
+      // Add table-responsive class to tables
+      document.querySelectorAll('table').forEach((table) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-responsive';
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      });
+    });
+
+    // Print functionality
+    document.getElementById('print-report').addEventListener('click', function () {
+      window.print();
+    });
+  </script>
+</body>
+
+</html>
