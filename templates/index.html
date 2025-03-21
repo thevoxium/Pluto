@@ -24,6 +24,23 @@
             <div class="input-wrapper">
               <i class="fas fa-search search-icon"></i>
               <input type="text" id="query" name="query" placeholder="What topic would you like to research?" required>
+              <div class="mode-selector-container">
+                <select id="mode-selector" name="mode" class="mode-selector">
+                  <option value="concise" selected>Concise</option>
+                  <option value="detailed">Detailed</option>
+                </select>
+                <div class="mode-info-tooltip">
+                  <i class="fas fa-info-circle"></i>
+                  <div class="tooltip-content">
+                    <div class="tooltip-option">
+                      <strong>Concise:</strong> Quick focused response (1-2 min)
+                    </div>
+                    <div class="tooltip-option">
+                      <strong>Detailed:</strong> Comprehensive report (5-10 min)
+                    </div>
+                  </div>
+                </div>
+              </div>
               <button type="submit" id="generate-btn">
                 Research <i class="fas fa-arrow-right"></i>
               </button>
@@ -78,6 +95,12 @@
                 <i class="far fa-clock"></i>
                 <span id="elapsed-time">00:00</span>
               </div>
+              <div class="selected-mode-indicator">
+                <div class="mode-badge" id="mode-badge">
+                  <i class="fas fa-bolt"></i>
+                  <span>Concise</span>
+                </div>
+              </div>
               <button id="new-research-btn" class="action-button">
                 <i class="fas fa-plus"></i> New Research
               </button>
@@ -85,7 +108,7 @@
           </div>
 
           <div class="research-progress">
-            <div class="status-steps" style="display: none;">
+            <div class="status-steps" id="status-steps">
               <div class="status-step" id="icon-thinking">
                 <div class="step-icon">
                   <i class="fas fa-brain"></i>
@@ -118,7 +141,7 @@
             <div class="progress-card">
               <div class="progress-label">
                 <span id="status-message">Generating search queries...</span>
-                <span id="progress-indicator" class="step-indicator" style="display: none;">1/7</span>
+                <span id="progress-indicator" class="step-indicator">1/5</span>
               </div>
               <div class="progress-track">
                 <div class="progress-bar" id="progress-bar"></div>

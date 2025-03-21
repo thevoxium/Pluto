@@ -52,7 +52,7 @@ load_report_data()
 def update_progress(task_id, message, progress, current_step=None, total_steps=None, search_results=None):
     if task_id in background_tasks:
         # Make sure progress doesn't exceed 99% until we're completely done
-        if progress >= 100 and message != "Report complete!":
+        if progress >= 100 and message != "Report complete!" and message != "Response complete!":
             progress = 99
             
         progress_data = {
@@ -70,7 +70,7 @@ def update_progress(task_id, message, progress, current_step=None, total_steps=N
         if search_results:
             background_tasks[task_id]['search_results'] = search_results
 
-def generate_report_task(query, task_id):
+def generate_report_task(query, task_id, mode="concise"):
     """Background task to generate the consultant report"""
     try:
         # Create progress callback
@@ -79,21 +79,24 @@ def generate_report_task(query, task_id):
             if 'Generating' in message:
                 current_step += 1
             
+            # Adjust total steps based on mode
+            total_steps = 7 if mode == "detailed" else 5  # Concise mode has fewer steps
+            
             background_tasks[task_id]['current_step'] = current_step
             update_progress(
                 task_id, 
                 message, 
                 progress, 
                 current_step, 
-                7,  # Total steps
+                total_steps,
                 search_results
             )
         
         # Initialize task with starting step
         background_tasks[task_id]['current_step'] = 1
         
-        # Create generator with progress callback
-        generator = ConsultantReportGenerator(progress_callback)
+        # Create generator with progress callback and mode
+        generator = ConsultantReportGenerator(progress_callback, mode)
         output_file = generator.generate_consultant_report(query)
         
         # Read the markdown content
@@ -109,7 +112,7 @@ def generate_report_task(query, task_id):
         # Initialize chat history
         chat_history = [
             {"role": "system", "content": "You are an AI research assistant helping users explore topics from a comprehensive report."},
-            {"role": "assistant", "content": f"I've generated a comprehensive report on '{query}'. You can ask me any questions about the report or request further analysis on specific aspects."}
+            {"role": "assistant", "content": f"I've generated a {'comprehensive report' if mode == 'detailed' else 'concise response'} on '{query}'. You can ask me any questions about the {'report' if mode == 'detailed' else 'research'} or request further analysis on specific aspects."}
         ]
         
         # Save the result
@@ -118,12 +121,18 @@ def generate_report_task(query, task_id):
             'html': html_content,
             'raw_markdown': markdown_content,
             'filename': output_file,
-            'title': query
+            'title': query,
+            'mode': mode
         }
         background_tasks[task_id]['chat_history'] = chat_history
         
         # Make sure progress bar reaches 100%
-        update_progress(task_id, "Report complete!", 100, 7, 7, None)
+        total_steps = 7 if mode == "detailed" else 5
+        update_progress(
+            task_id, 
+            "Report complete!" if mode == "detailed" else "Response complete!", 
+            100, total_steps, total_steps, None
+        )
         
         # Save report data to persistent storage
         save_report_data(task_id)
@@ -142,6 +151,11 @@ def generate():
     if not query:
         return jsonify({'error': 'No query provided'}), 400
     
+    # Get the selected mode (default to concise if not provided)
+    mode = request.form.get('mode', 'concise')
+    if mode not in ['concise', 'detailed']:
+        mode = 'concise'  # Default to concise if invalid mode
+    
     # Create a unique task ID
     task_id = str(uuid.uuid4())
     
@@ -150,17 +164,18 @@ def generate():
         'status': 'running',
         'created_at': time.time(),
         'query': query,
+        'mode': mode,
         'progress': {
             'percent': 0,
             'message': 'Initializing...',
             'current_step': 1,
-            'total_steps': 7
+            'total_steps': 7 if mode == 'detailed' else 5
         },
         'search_results': []
     }
     
     # Start background task
-    thread = threading.Thread(target=generate_report_task, args=(query, task_id))
+    thread = threading.Thread(target=generate_report_task, args=(query, task_id, mode))
     thread.daemon = True
     thread.start()
     
@@ -177,7 +192,8 @@ def task_status(task_id):
     if task['status'] == 'completed':
         response['result'] = {
             'title': task['result']['title'],
-            'filename': task['result']['filename']
+            'filename': task['result']['filename'],
+            'mode': task['result']['mode']
         }
     elif task['status'] == 'failed':
         response['error'] = task.get('error', 'An unknown error occurred')
@@ -207,6 +223,7 @@ def report_content(task_id):
     return jsonify({
         'html_content': result['html'],
         'title': result['title'],
+        'mode': result.get('mode', 'detailed'),  # Default to detailed for backward compatibility
         'chat_history': client_chat_history
     })
 
@@ -249,9 +266,10 @@ def chat(task_id):
     
     # Get existing chat history
     if 'chat_history' not in background_tasks[task_id]:
+        mode = background_tasks[task_id]['result'].get('mode', 'detailed')
         background_tasks[task_id]['chat_history'] = [
             {"role": "system", "content": "You are an AI research assistant helping users explore topics from a comprehensive report."},
-            {"role": "assistant", "content": f"I've generated a comprehensive report on '{background_tasks[task_id]['query']}'. You can ask me any questions about the report or request further analysis on specific aspects."}
+            {"role": "assistant", "content": f"I've generated a {'comprehensive report' if mode == 'detailed' else 'concise response'} on '{background_tasks[task_id]['query']}'. You can ask me any questions about the {'report' if mode == 'detailed' else 'research'} or request further analysis on specific aspects."}
         ]
     
     chat_history = background_tasks[task_id]['chat_history']
@@ -387,7 +405,8 @@ def get_reports():
             reports.append({
                 'id': task_id,
                 'title': task['result'].get('title', ''),
-                'created_at': task['created_at']
+                'created_at': task['created_at'],
+                'mode': task['result'].get('mode', 'detailed')  # Include mode in report summary
             })
     
     # Sort by creation date (newest first)

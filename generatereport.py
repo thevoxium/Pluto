@@ -6,6 +6,7 @@ import requests
 from typing import List, Dict, Any, Callable, Optional
 from urllib.parse import urlparse
 import concurrent.futures
+from datetime import date
 
 # Third-party imports
 from googlesearch import search
@@ -20,11 +21,14 @@ from langchain.schema import Document
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 
+# Import configuration
+from config import get_config
+
 # Environment variables
 OPENAI_API_KEY = os.getenv("OPENAI")  # For embeddings
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # For LLM access
 
-# Configuration
+# Configuration - will be overridden based on selected mode
 MAX_SEARCH_SUGGESTIONS = 10
 RESULTS_PER_SUGGESTION = 5
 MAX_WORKERS = 5
@@ -32,7 +36,7 @@ CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 200
 
 class ConsultantReportGenerator:
-    def __init__(self, progress_callback: Optional[Callable] = None):
+    def __init__(self, progress_callback: Optional[Callable] = None, mode: str = "concise"):
         """Initialize the consultant report generator."""
         # Validate API keys
         if not OPENROUTER_API_KEY:
@@ -48,6 +52,16 @@ class ConsultantReportGenerator:
         
         # Track search results for UI display
         self.search_results = []
+        
+        # Get configuration based on mode
+        self.config = get_config(mode)
+        self.mode = mode.lower()
+        
+        # Set parameters based on configuration
+        self.max_search_suggestions = self.config["search_parameters"]["max_search_suggestions"]
+        self.results_per_suggestion = self.config["search_parameters"]["results_per_suggestion"]
+        self.max_workers = self.config["search_parameters"]["max_workers"]
+        self.report_format = self.config["report_format"]
         
     def update_progress(self, message: str, percent: float):
         """Update progress if callback is provided"""
@@ -94,31 +108,7 @@ class ConsultantReportGenerator:
             "messages": [
                 {
                     "role": "system",
-                    "content": """You are a versatile research assistant with expertise in diverse fields including humanities, sciences, arts, technology, business, and more.
-
-Your task is to analyze a query and generate 10 diverse search terms that will gather comprehensive information across multiple dimensions of the topic.
-
-Adapt your search strategy to the nature of the query:
-1. For scientific/technical topics: Include search terms covering theoretical foundations, practical applications, and recent developments
-2. For humanities/social sciences: Include terms exploring historical context, different perspectives, social implications, and case studies
-3. For practical subjects: Include terms for methodologies, best practices, examples, and comparative analyses
-4. For creative fields: Include terms for techniques, influential works, evolution of the field, and contemporary trends
-
-Your search terms should balance:
-- Foundational knowledge (30%)
-- Intermediate insights (40%)
-- Advanced perspectives (30%)
-
-Deliberately include search terms that will uncover:
-- Different viewpoints and interpretations
-- Historical evolution and context
-- Contemporary applications and relevance
-- Future trends and emerging directions
-- Practical examples and case studies
-- Comparative analyses
-- Cultural or geographic variations when relevant
-
-Format your response as a JSON object with a "suggestions" array containing exactly 10 search queries."""
+                    "content": self.config["prompts"]["search_system_prompt"]
                 },
                 {
                     "role": "user",
@@ -147,19 +137,27 @@ Format your response as a JSON object with a "suggestions" array containing exac
     
     def _fallback_suggestions(self, query: str) -> List[str]:
         """Generate fallback suggestions if API fails."""
-        # More balanced, versatile fallback queries
-        return [
-            f"{query} comprehensive overview",
-            f"{query} historical development and evolution",
-            f"{query} practical applications and examples",
-            f"{query} different perspectives and approaches",
-            f"{query} case studies and real-world implementations",
-            f"{query} current trends and future directions",
-            f"{query} comparative analysis",
-            f"{query} best practices and methodologies",
-            f"{query} challenges and limitations",
-            f"{query} influential works and key contributors"
-        ]
+        if self.mode == "detailed":
+            # More balanced, versatile fallback queries for detailed mode
+            return [
+                f"{query} comprehensive overview",
+                f"{query} historical development and evolution",
+                f"{query} practical applications and examples",
+                f"{query} different perspectives and approaches",
+                f"{query} case studies and real-world implementations",
+                f"{query} current trends and future directions",
+                f"{query} comparative analysis",
+                f"{query} best practices and methodologies",
+                f"{query} challenges and limitations",
+                f"{query} influential works and key contributors"
+            ]
+        else:
+            # Focused fallback queries for concise mode
+            return [
+                f"{query} overview",
+                f"{query} key concepts",
+                f"{query} practical examples"
+            ]
     
     def search_web(self, suggestions: List[str]) -> Dict[str, List[str]]:
         """Search Google for each suggestion and collect URLs."""
@@ -171,7 +169,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
             print(f"\nSearching for: '{suggestion}'")
             try:
                 # Using googlesearch-python to get search results
-                results = list(search(suggestion, num_results=RESULTS_PER_SUGGESTION, lang="en"))
+                results = list(search(suggestion, num_results=self.results_per_suggestion, lang="en"))
                 all_results[suggestion] = results
                 
                 # Print results for this suggestion
@@ -238,7 +236,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
         # Create a progress counter
         completed = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Start the download tasks
             future_to_url = {executor.submit(self.extract_content, url): url for url in unique_urls}
             
@@ -381,61 +379,19 @@ Format your response as a JSON object with a "suggestions" array containing exac
         contexts = [doc.page_content for doc in relevant_docs[:8]]
         context_text = "\n\n".join(contexts)
         
-        # Create outline prompt for a versatile approach across fields
+        # Get today's date as string
+        today = date.today()
+        today_str = str(today)
+        
+        # Create outline prompt
         outline_prompt = PromptTemplate(
-            input_variables=["query", "context"],
-            template="""
-            You are a versatile research assistant with expertise in diverse fields. Your goal is to create a comprehensive, 
-            insightful deep-dive report on any topic, adapting your approach to the subject matter.
-            
-            Based on the following query and retrieved information, create a detailed outline for an in-depth report. 
-            The outline should be appropriate to the field and nature of the query - whether it's humanities, sciences, 
-            arts, business, technology, or any other domain.
-            
-            Your outline must include:
-            
-            1. An engaging, informative title that captures the essence of the topic
-            2. A concise abstract (150-200 words) that previews the main insights and value of the report
-            3. 5-7 major section headers that:
-               - Logically progress through the topic
-               - Adapt naturally to the subject matter
-               - Cover diverse aspects appropriate to the field
-               - Include contextual background where helpful
-               - Examine practical applications when relevant
-               - Consider different perspectives or approaches
-               - Address current developments and future directions
-               
-            4. For each section, provide a brief description (50-75 words) of what will be covered
-            
-            IMPORTANT GUIDELINES:
-            - Adapt your structure to the nature of the query - different types of questions require different approaches
-            - For scientific/technical topics: balance conceptual understanding with practical implications
-            - For humanities/social topics: include historical context, different perspectives, and real-world relevance
-            - For practical queries: focus on methodologies, examples, and applications
-            - For creative topics: explore techniques, notable works, and evolutionary trends
-            - Avoid overly abstract or purely theoretical sections unless the query specifically calls for them
-            - Ensure the outline would be helpful to someone seeking comprehensive understanding
-            
-            QUERY: {query}
-            
-            RELEVANT INFORMATION:
-            {context}
-            
-            Format your response as JSON with the following structure:
-            {{
-                "title": "The engaging title",
-                "abstract": "Concise abstract previewing main insights",
-                "sections": [
-                    {{"section": "Section Name", "description": "Brief description of what this section will cover"}},
-                    // other sections here
-                ]
-            }}
-            """
+            input_variables=["query", "context", "today_str"],
+            template=self.config["prompts"]["outline_prompt_template"]
         )
         
         # Generate outline
         outline_chain = LLMChain(llm=llm, prompt=outline_prompt)
-        response = outline_chain.run(query=self.query, context=context_text)
+        response = outline_chain.run(query=self.query, context=context_text, today_str=today_str)
         
         # Parse the JSON response
         try:
@@ -483,53 +439,14 @@ Format your response as a JSON object with a "suggestions" array containing exac
         contexts = [doc.page_content for doc in relevant_docs]
         context_text = "\n\n".join(contexts)
         
-        # Create prompt for section generation with adaptive approach
+        # Get today's date as string
+        today = date.today()
+        today_str = str(today)
+        
+        # Create prompt for section generation
         section_prompt = PromptTemplate(
-            input_variables=["section_name", "section_description", "context", "query"],
-            template="""
-            You are a versatile research assistant writing a section of a comprehensive report on "{query}". Don't write in big paragraphs, that can distract the users. Always divide your paragraphs in bullet points.
-            
-            SECTION: {section_name}
-            DESCRIPTION: {section_description}
-            
-            Relevant information from research:
-            {context}
-            
-            Write a comprehensive, insightful section (approximately 800-1200 words) that provides valuable understanding 
-            to readers. Your writing should:
-            
-            1. ADAPT TO THE SUBJECT MATTER:
-               - For scientific/technical topics: Explain concepts clearly with appropriate depth
-               - For humanities/social topics: Provide context, varied perspectives, and meaningful examples
-               - For practical topics: Include methodologies, applications, and real-world examples
-               - For creative/artistic topics: Explore techniques, influences, and significant works
-            
-            2. BE INFORMATIVE AND ENGAGING:
-               - Use a clear, accessible writing style
-               - Explain specialized terminology when needed
-               - Include specific examples, cases, or illustrations
-               - Weave in insightful analysis and not just facts
-               - Present information in a logical flow
-            
-            3. OFFER BALANCED COVERAGE:
-               - Include diverse viewpoints when relevant
-               - Consider historical context when helpful
-               - Connect theory to practice where appropriate
-               - Address nuances and complexities
-               - Acknowledge ongoing debates or uncertainties
-            
-            4. PROVIDE DEPTH AND SUBSTANCE:
-               - Go beyond surface-level information
-               - Include specific data, figures, or examples when relevant
-               - Discuss implications and significance
-               - Connect this section to the broader topic
-               - Offer insights that would help readers develop a sophisticated understanding
-            
-            This section should be informative, well-structured, and directly relevant to helping readers develop a 
-            comprehensive understanding of the topic. Use a conversational yet substantive tone.
-            
-            Do not include the section title in your response, as it will be added separately.
-            """
+            input_variables=["section_name", "section_description", "context", "query", "today_str"],
+            template=self.config["prompts"]["section_prompt_template"]
         )
         
         # Provide more granular progress updates for the last sections
@@ -544,7 +461,8 @@ Format your response as a JSON object with a "suggestions" array containing exac
             section_name=section["section"],
             section_description=section["description"],
             context=context_text,
-            query=self.query
+            query=self.query,
+            today_str=today_str
         )
         
         # Clean up any potential headings that the model might have included anyway
@@ -557,6 +475,41 @@ Format your response as a JSON object with a "suggestions" array containing exac
                             completed_section_progress)
         
         return section_content.strip()
+    
+    def generate_direct_response(self, llm, vectorstore: Chroma) -> str:
+        """Generate a direct response for concise mode."""
+        self.update_progress("Generating concise response...", 60)
+        
+        # Get today's date as string
+        today = date.today()
+        today_str = str(today)
+        
+        # Retrieve most relevant documents
+        relevant_docs = vectorstore.similarity_search(self.query, k=12)
+        
+        # Extract context from relevant documents
+        contexts = [doc.page_content for doc in relevant_docs]
+        context_text = "\n\n".join(contexts)
+        
+        # Create direct response prompt
+        response_prompt = PromptTemplate(
+            input_variables=["query", "context", "today_str"],
+            template=self.config["prompts"]["direct_response_prompt"]
+        )
+        
+        # Generate direct response
+        response_chain = LLMChain(llm=llm, prompt=response_prompt)
+        
+        # Provide progress updates
+        self.update_progress("Analyzing information and crafting response...", 75)
+        
+        # Generate the response
+        response = response_chain.run(query=self.query, context=context_text, today_str=today_str)
+        
+        # Update progress
+        self.update_progress("Response complete!", 95)
+        
+        return response.strip()
     
     def generate_sources(self, documents: List[Document]) -> str:
         """Generate a sources section from the document sources."""
@@ -581,6 +534,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
         
         # Step 1: Generate search suggestions
         suggestions = self.generate_search_suggestions(query)
+        suggestions = suggestions[:self.max_search_suggestions]  # Limit to max suggestions for selected mode
         
         # Step 2: Search the web for each suggestion
         search_results = self.search_web(suggestions)
@@ -607,68 +561,102 @@ Format your response as a JSON object with a "suggestions" array containing exac
         print("Setting up LLM model...")
         llm = self.setup_llm_model()
         
-        # Step 7: Retrieve relevant documents for the main query
-        print("Retrieving most relevant content for query...")
-        self.update_progress("Analyzing relevant content...", 55)
-        relevant_docs = vectorstore.similarity_search(query, k=10)
+        output_file = ""
         
-        # Step 8: Generate consultant report outline
-        print("Generating comprehensive report outline...")
-        outline = self.create_consultant_outline(llm, relevant_docs)
-        print(f"Generated outline for report: {outline['title']}")
-        
-        # Step 9: Generate content for each section
-        print("Generating content section by section...")
-        self.update_progress("Writing detailed sections...", 70)
-        report_sections = []
-        
-        # Current date for the report
-        current_date = time.strftime("%B %Y")
-        
-        # Add title page
-        report_sections.append(f"# {outline['title']}\n")
-        report_sections.append(f"### {current_date}\n")
-        
-        # Add abstract
-        report_sections.append(f"## Abstract\n{outline['abstract']}\n")
-        
-        # Add table of contents header (actual ToC will be generated by markdown renderer)
-        report_sections.append("## Table of Contents\n")
-        
-        # Generate each section
-        total_sections = len(outline['sections'])
-        for i, section in enumerate(outline['sections']):
-            print(f"Generating section {i+1}/{total_sections}: {section['section']}...")
-            section_content = self.generate_section_content(section, llm, vectorstore, i, total_sections)
-            report_sections.append(f"## {section['section']}\n{section_content}\n")
+        # Proceed based on mode
+        if self.report_format == "full_report":
+            # Generate full detailed report
+            print("Generating comprehensive report outline...")
+            self.update_progress("Analyzing relevant content...", 55)
+            relevant_docs = vectorstore.similarity_search(query, k=10)
             
-            # Add a short delay to avoid rate limiting
-            time.sleep(1)
-        
-        # Generate bibliography with sources
-        print("Generating bibliography...")
-        self.update_progress("Finalizing report...", 95)
-        sources = self.generate_sources(documents)
-        report_sections.append("## References\n" + sources)
-        
-        # Add research methodology note
-        research_note = """
+            # Step 8: Generate consultant report outline
+            print("Generating comprehensive report outline...")
+            outline = self.create_consultant_outline(llm, relevant_docs)
+            print(f"Generated outline for report: {outline['title']}")
+            
+            # Step 9: Generate content for each section
+            print("Generating content section by section...")
+            self.update_progress("Writing detailed sections...", 70)
+            report_sections = []
+            
+            # Current date for the report
+            current_date = time.strftime("%B %Y")
+            
+            # Add title page
+            report_sections.append(f"# {outline['title']}\n")
+            report_sections.append(f"### {current_date}\n")
+            
+            # Add abstract
+            report_sections.append(f"## Abstract\n{outline['abstract']}\n")
+            
+            # Add table of contents header (actual ToC will be generated by markdown renderer)
+            report_sections.append("## Table of Contents\n")
+            
+            # Generate each section
+            total_sections = len(outline['sections'])
+            for i, section in enumerate(outline['sections']):
+                print(f"Generating section {i+1}/{total_sections}: {section['section']}...")
+                section_content = self.generate_section_content(section, llm, vectorstore, i, total_sections)
+                report_sections.append(f"## {section['section']}\n{section_content}\n")
+                
+                # Add a short delay to avoid rate limiting
+                time.sleep(1)
+            
+            # Generate bibliography with sources
+            print("Generating bibliography...")
+            self.update_progress("Finalizing report...", 95)
+            sources = self.generate_sources(documents)
+            report_sections.append("## References\n" + sources)
+            
+            # Add research methodology note
+            research_note = """
 ## Research Methodology
 
 This comprehensive report was generated through a research process that synthesizes information from multiple diverse sources. Content was gathered through advanced search strategies targeting various aspects of the topic, processed using semantic analysis for relevance, and synthesized into a cohesive narrative.
 
 The information presented aims to provide a well-rounded understanding of the subject matter with attention to different perspectives and applications. References to original sources are provided in the bibliography.
 """
-        report_sections.append(research_note)
+            report_sections.append(research_note)
+            
+            # Combine all sections into the final report
+            final_report = "\n\n".join(report_sections)
+            
+            # Save the consultant report
+            output_file = f"{query.replace(' ', '_')}_comprehensive_report.md"
+            with open(output_file, 'w', encoding='utf-8') as file:
+                file.write(final_report)
+            
+            print(f"\nComprehensive report has been generated and saved to {output_file}")
+            self.update_progress("Report complete!", 100)
+            
+        else:
+            # Generate concise direct response
+            print("Generating concise direct response...")
+            
+            # Generate direct response
+            response = self.generate_direct_response(llm, vectorstore)
+            
+            # Add sources for attribution
+            sources = self.generate_sources(documents)
+            
+            # Combine into a simple markdown document
+            current_date = time.strftime("%B %Y")
+            response_sections = [
+                f"# Response: {query}\n### {current_date}\n",
+                response,
+                "\n\n## Sources\n" + sources
+            ]
+            
+            # Join sections
+            final_report = "\n\n".join(response_sections)
+            
+            # Save the response to file
+            output_file = f"{query.replace(' ', '_')}_response.md"
+            with open(output_file, 'w', encoding='utf-8') as file:
+                file.write(final_report)
+                
+            print(f"\nConcise response has been generated and saved to {output_file}")
+            self.update_progress("Response complete!", 100)
         
-        # Combine all sections into the final report
-        final_report = "\n\n".join(report_sections)
-        
-        # Save the consultant report
-        output_file = f"{query.replace(' ', '_')}_comprehensive_report.md"
-        with open(output_file, 'w', encoding='utf-8') as file:
-            file.write(final_report)
-        
-        print(f"\nComprehensive report has been generated and saved to {output_file}")
-        self.update_progress("Report complete!", 100)
         return output_file

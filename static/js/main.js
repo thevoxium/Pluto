@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const reportContent = document.getElementById('report-content');
     const downloadReportBtn = document.getElementById('download-report');
     const newResearchBtn = document.getElementById('new-research-btn');
+    const modeSelector = document.getElementById('mode-selector');
+    const modeBadge = document.getElementById('mode-badge');
+    const statusSteps = document.getElementById('status-steps');
     
     // Status steps
     const iconThinking = document.getElementById('icon-thinking');
@@ -43,6 +46,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let timerInterval;
     let currentTaskId = null;
     
+    // Track current mode
+    let currentMode = 'concise';
+    
     // Chat state
     let isWaitingForResponse = false;
     
@@ -55,6 +61,50 @@ document.addEventListener('DOMContentLoaded', function() {
     // Variable to track if we're at the bottom
     let isAtBottom = false;
     
+    // Mode selector handler
+    if (modeSelector) {
+        modeSelector.addEventListener('change', function() {
+            currentMode = this.value;
+            updateModeIndicator(currentMode);
+        });
+    }
+    
+    // Initialize mode indicator
+    updateModeIndicator(modeSelector ? modeSelector.value : 'concise');
+    
+    // Function to update the mode indicator
+    function updateModeIndicator(mode) {
+        if (!modeBadge) return;
+        
+        // Update badge text
+        const modeText = modeBadge.querySelector('span');
+        if (modeText) {
+            modeText.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+        }
+        
+        // Update badge icon and style
+        const modeIcon = modeBadge.querySelector('i');
+        if (modeIcon) {
+            if (mode === 'concise') {
+                modeIcon.className = 'fas fa-bolt';
+                modeBadge.className = 'mode-badge mode-concise';
+            } else {
+                modeIcon.className = 'fas fa-book';
+                modeBadge.className = 'mode-badge mode-detailed';
+            }
+        }
+        
+        // Update status steps display based on mode
+        if (statusSteps) {
+            if (mode === 'concise') {
+                // Simplified steps for concise mode
+                statusSteps.classList.add('concise-mode');
+            } else {
+                statusSteps.classList.remove('concise-mode');
+            }
+        }
+    }
+    
     // Function to update button state based on scroll position
     function updateScrollButton() {
         if (!reportSection || reportSection.classList.contains('hidden')) return;
@@ -65,20 +115,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const scrollPosition = window.scrollY;
         
         // Check if near bottom (within 300px of bottom)
-        const isNearBottom = scrollPosition + windowHeight > documentHeight;
+        const isNearBottom = scrollPosition + windowHeight > documentHeight - 300;
         
-            
-            if (isAtBottom) {
-                // Change to "Scroll to top"
-                scrollButton.classList.add('scrolling-up');
-                scrollButton.querySelector('.scroll-text').textContent = 'Report';
-                scrollButton.querySelector('i').className = 'fas fa-chevron-up';
-            } else {
-                // Change to "Scroll to chat"
-                scrollButton.classList.remove('scrolling-up');
-                scrollButton.querySelector('.scroll-text').textContent = 'Chat';
-                scrollButton.querySelector('i').className = 'fas fa-chevron-down';
-            }
+        if (isNearBottom) {
+            // Change to "Scroll to top"
+            scrollButton.classList.add('scrolling-up');
+            scrollButton.querySelector('.scroll-text').textContent = 'Report';
+            scrollButton.querySelector('i').className = 'fas fa-chevron-up';
+            isAtBottom = true;
+        } else {
+            // Change to "Scroll to chat"
+            scrollButton.classList.remove('scrolling-up');
+            scrollButton.querySelector('.scroll-text').textContent = 'Chat';
+            scrollButton.querySelector('i').className = 'fas fa-chevron-down';
+            isAtBottom = false;
+        }
     }
     
     // Add click event listener to the scroll button
@@ -86,13 +137,13 @@ document.addEventListener('DOMContentLoaded', function() {
         scrollButton.addEventListener('click', function() {
             if (isAtBottom) {
                 // Scroll to the top of the report
-              isAtBottom =false;
                 reportContent.scrollIntoView({ behavior: 'smooth' });
+                isAtBottom = false;
             } else {
-              isAtBottom = true;
                 // Scroll to the chat container
                 if (chatContainer) {
                     chatContainer.scrollIntoView({ behavior: 'smooth' });
+                    isAtBottom = true;
                     
                     // If chat is collapsed, expand it
                     if (chatContainer.classList.contains('collapsed') && chatToggleBtn) {
@@ -179,6 +230,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            // Get the selected mode
+            currentMode = modeSelector ? modeSelector.value : 'concise';
+            
             // Show loading state on button
             const generateBtn = document.getElementById('generate-btn');
             const originalBtnText = generateBtn.innerHTML;
@@ -195,8 +249,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             progressBar.style.width = '5%';
             statusMessage.textContent = 'Generating search queries...';
-            progressIndicator.textContent = '1/7';
+            
+            // Update the progress indicator based on mode
+            progressIndicator.textContent = currentMode === 'detailed' ? '1/7' : '1/5';
+            
             currentQuery.textContent = query;
+            
+            // Update mode indicator in the research view
+            updateModeIndicator(currentMode);
             
             // Reset research UI
             resetResearchUI();
@@ -207,8 +267,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Set initial status
             setStatus('thinking');
             
-            // Submit form data
+            // Submit form data with mode
             const formData = new FormData(reportForm);
+            formData.append('mode', currentMode); // Ensure mode is included
             
             fetch('/generate', {
                 method: 'POST',
@@ -447,6 +508,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Store for adding to history later
         let reportTitle = "";
+        let reportMode = "concise";
         
         const pollInterval = setInterval(() => {
             fetch(`/status/${taskId}`)
@@ -469,7 +531,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Update progress bar to 100%
                         progressBar.style.width = '100%';
-                        statusMessage.textContent = 'Report complete!';
+                        statusMessage.textContent = data.result.mode === 'detailed' ? 'Report complete!' : 'Response complete!';
+                        
+                        // Store the mode
+                        reportMode = data.result.mode || 'concise';
                         
                         // When completed, fetch the report content and show it in the same page
                         fetch(`/report_content/${taskId}`)
@@ -486,6 +551,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 
                                 // Save report title for history
                                 reportTitle = reportData.title;
+                                reportMode = reportData.mode || 'concise';
                                 
                                 // Show report section with animation
                                 reportSection.classList.remove('hidden');
@@ -523,7 +589,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 
                                 // Add to report history
                                 const previewText = extractPreviewFromHtml(reportData.html_content);
-                                addReportToHistory(taskId, reportTitle, previewText);
+                                addReportToHistory(taskId, reportTitle, previewText, reportMode);
                                 
                                 // Scroll to report section with smooth animation
                                 reportSection.scrollIntoView({ behavior: 'smooth' });
@@ -532,7 +598,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 showScrollButtonForReport();
                                 
                                 // Show completion notification
-                                showNotification('Report generated successfully!', 'success');
+                                showNotification(`${reportMode === 'detailed' ? 'Report' : 'Response'} generated successfully!`, 'success');
                             })
                             .catch(error => {
                                 console.error('Error loading report:', error);
@@ -583,9 +649,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     statusMessage.textContent = data.progress.message;
                     
                     // Update status icons based on the current phase
-                    if (data.progress.current_step <= 2) {
+                    const totalSteps = data.progress.total_steps || (currentMode === 'detailed' ? 7 : 5);
+                    
+                    if (data.progress.current_step <= Math.ceil(totalSteps * 0.3)) {
                         setStatus('thinking');
-                    } else if (data.progress.current_step <= 5) {
+                    } else if (data.progress.current_step <= Math.ceil(totalSteps * 0.7)) {
                         setStatus('research');
                     } else {
                         setStatus('analysis');
@@ -722,7 +790,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
         }
     }
-  function startTimer() {
+    
+    function startTimer() {
         startTime = new Date();
         timerInterval = setInterval(updateTimer, 1000);
     }
@@ -790,8 +859,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const icon = type === 'error' ? 'fas fa-exclamation-circle' : 
                     type === 'success' ? 'fas fa-check-circle' : 
                     'fas fa-info-circle';
-        
-        notification.innerHTML = `<i class="${icon}" style="margin-right: 10px;"></i> ${message}`;
+      notification.innerHTML = `<i class="${icon}" style="margin-right: 10px;"></i> ${message}`;
         
         // Add to container
         const container = document.getElementById('notification-container');
@@ -819,7 +887,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Function to add a report to history
-    function addReportToHistory(taskId, title, previewText) {
+    function addReportToHistory(taskId, title, previewText, mode = 'concise') {
         if (!reportHistoryContainer) return;
         
         const reports = getReportHistory();
@@ -828,8 +896,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const newReport = {
             id: taskId,
             title: title,
-            preview: previewText || "Strategic analysis and recommendations for " + title,
+            preview: previewText || `Strategic analysis and recommendations for ${title}`,
             date: new Date().toISOString(),
+            mode: mode,
             isNew: true
         };
         
@@ -859,7 +928,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // If container doesn't exist, exit
         if (!reportHistoryContainer) return;
 
-      // Clear report container except empty state
+        // Clear report container except empty state
         const elements = reportHistoryContainer.querySelectorAll(':not(#empty-reports-state)');
         elements.forEach(el => el.remove());
         
@@ -899,7 +968,12 @@ document.addEventListener('DOMContentLoaded', function() {
             card.appendChild(newBadge);
         }
         
- // Create card content
+        // Determine mode badge
+        const modeBadgeHtml = report.mode === 'detailed' ? 
+            `<div class="mode-badge-small mode-detailed"><i class="fas fa-book"></i> Detailed</div>` :
+            `<div class="mode-badge-small mode-concise"><i class="fas fa-bolt"></i> Concise</div>`;
+        
+        // Create card content
         card.innerHTML = `
             <div class="report-card-header">
                 <div class="report-date">
@@ -912,11 +986,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="report-preview">${report.preview}</div>
                 <div class="report-actions">
                     <div class="report-badge">
-                        <i class="fas fa-file-lines"></i>
-                        <span>Report</span>
+                        ${modeBadgeHtml}
                     </div>
                     <div class="view-report-btn">
-                        <span>View Report</span>
+                        <span>View ${report.mode === 'detailed' ? 'Report' : 'Response'}</span>
                         <i class="fas fa-arrow-right"></i>
                     </div>
                 </div>
@@ -925,7 +998,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add click event to view the report
         card.addEventListener('click', function() {
-          viewReport(report.id);
+            viewReport(report.id);
         });
         
         return card;
@@ -972,7 +1045,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Set title and content
                 if (modalReportTitle) {
                     modalReportTitle.textContent = reportData.title;
+                    
+                    // Add mode badge to title
+                    const mode = reportData.mode || 'concise';
+                    const modeBadgeClass = mode === 'detailed' ? 'mode-detailed' : 'mode-concise';
+                    const modeIcon = mode === 'detailed' ? 'fas fa-book' : 'fas fa-bolt';
+                    
+                    // Add mode badge if not already present
+                    if (!modalReportTitle.querySelector('.mode-badge-inline')) {
+                        const modeBadge = document.createElement('span');
+                        modeBadge.className = `mode-badge-inline ${modeBadgeClass}`;
+                        modeBadge.innerHTML = `<i class="${modeIcon}"></i> ${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
+                        modalReportTitle.appendChild(modeBadge);
+                    }
                 }
+                
                 modalReportContent.innerHTML = reportData.html_content;
                 
                 // Load chat history in the modal if available
@@ -1092,7 +1179,14 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             if (!reportModal.classList.contains('open')) {
                 if (modalReportContent) modalReportContent.innerHTML = '';
-                if (modalReportTitle) modalReportTitle.textContent = 'Report';
+                if (modalReportTitle) {
+                    // Remove mode badge if present
+                    const modeBadge = modalReportTitle.querySelector('.mode-badge-inline');
+                    if (modeBadge) {
+                        modeBadge.remove();
+                    }
+                    modalReportTitle.textContent = 'Report';
+                }
                 if (modalChatMessages) modalChatMessages.innerHTML = '';
             }
         }, 300);
@@ -1201,6 +1295,140 @@ document.addEventListener('DOMContentLoaded', function() {
         .scrolling-up i {
             transform: rotate(180deg);
         }
+        
+        /* Mode selector styles */
+        .mode-selector-container {
+            display: flex;
+            align-items: center;
+            border-right: 1px solid var(--card-border);
+            padding: 0 15px;
+            margin-right: 10px;
+        }
+        
+        .mode-selector {
+            background-color: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: var(--border-radius-md);
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23B0B0B0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 4px center;
+            padding-right: 24px;
+            transition: var(--transition-normal);
+        }
+        
+        .mode-selector:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        .mode-selector:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(136, 136, 136, 0.3);
+        }
+        
+        .mode-selector option {
+            background-color: var(--surface-color);
+            color: var(--text-primary);
+        }
+        
+        /* Mode info tooltip */
+        .mode-info-tooltip {
+            position: relative;
+            margin-left: 8px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        
+        .mode-info-tooltip:hover .tooltip-content {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .tooltip-content {
+            visibility: hidden;
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(10px);
+            width: 200px;
+            background-color: var(--surface-color);
+            border: 1px solid var(--card-border);
+            border-radius: var(--border-radius-md);
+            padding: 12px;
+            color: var(--text-primary);
+            box-shadow: var(--shadow-md);
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            font-size: 12px;
+        }
+        
+        .tooltip-option {
+            margin-bottom: 8px;
+        }
+        
+        .tooltip-option:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* Mode badges */
+        .mode-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            border-radius: var(--border-radius-md);
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .mode-concise {
+            background-color: rgba(138, 186, 174, 0.2);
+            color: var(--success-color);
+        }
+        
+        .mode-detailed {
+            background-color: rgba(204, 204, 204, 0.2);
+            color: var(--accent-color);
+        }
+        
+        /* Status steps for concise mode */
+        .status-steps.concise-mode .status-step:nth-child(3) {
+            display: none;  /* Hide the last step for concise mode */
+        }
+        
+        .status-steps.concise-mode .status-step:nth-child(2) .step-connector {
+            display: none;  /* Hide connector to the third step */
+        }
+        
+        /* Small mode badge for report cards */
+        .mode-badge-small {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 10px;
+        }
+        
+        /* Inline mode badge for modal title */
+        .mode-badge-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 14px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
     `;
     document.head.appendChild(style);
 });
@@ -1223,4 +1451,4 @@ function fillQuery(text) {
             searchBtn.classList.remove('pulse-animation');
         }, 1000);
     }
-}       // Create card content
+}
