@@ -487,7 +487,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
         section_prompt = PromptTemplate(
             input_variables=["section_name", "section_description", "context", "query"],
             template="""
-            You are a versatile research assistant writing a section of a comprehensive report on "{query}".
+            You are a versatile research assistant writing a section of a comprehensive report on "{query}". Don't write in big paragraphs, that can distract the users. Always divide your paragraphs in bullet points.
             
             SECTION: {section_name}
             DESCRIPTION: {section_description}
