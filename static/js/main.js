@@ -49,78 +49,47 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load report history on page load
     loadReportHistory();
     
-    // Create and append the scroll button to the DOM (to ensure it exists)
-    const scrollButtonHtml = `
-        <div id="scroll-button" class="scroll-button" style="
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background-color: var(--primary-color);
-            color: var(--bg-color);
-            border-radius: 50px;
-            padding: 12px 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: var(--shadow-md);
-            cursor: pointer;
-            z-index: 900;
-            transition: opacity 0.3s ease, transform 0.3s ease;
-            font-family: 'Poppins', sans-serif;
-            font-weight: 500;
-            font-size: 14px;
-            border: none;
-            opacity: 0;
-            visibility: hidden;
-        ">
-            <span class="scroll-text">Chat</span>
-            <i class="fas fa-chevron-down"></i>
-        </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', scrollButtonHtml);
-    
-    // Now get the reference to the newly created button
+    // Get reference to the scroll button
     const scrollButton = document.getElementById('scroll-button');
     
-    if (scrollButton) {
-        // Variable to track if we're at the bottom
-        let isAtBottom = false;
+    // Variable to track if we're at the bottom
+    let isAtBottom = false;
+    
+    // Function to update button state based on scroll position
+    function updateScrollButton() {
+        if (!reportSection || reportSection.classList.contains('hidden')) return;
         
-        // Function to update button state based on scroll position
-        function updateScrollButton() {
-            if (!reportSection || reportSection.classList.contains('hidden')) return;
+        // Get positions
+        const windowHeight = window.innerHeight;
+        const documentHeight = document.documentElement.scrollHeight;
+        const scrollPosition = window.scrollY;
+        
+        // Check if near bottom (within 300px of bottom)
+        const isNearBottom = scrollPosition + windowHeight > documentHeight;
+        
             
-            // Get positions
-            const windowHeight = window.innerHeight;
-            const documentHeight = document.documentElement.scrollHeight;
-            const scrollPosition = window.scrollY;
-            
-            // Check if near bottom (within 300px of bottom)
-            const isNearBottom = scrollPosition + windowHeight > documentHeight - 300;
-            
-            if (isNearBottom !== isAtBottom) {
-                isAtBottom = isNearBottom;
-                
-                if (isAtBottom) {
-                    // Change to "Scroll to top"
-                    scrollButton.classList.add('scrolling-up');
-                    scrollButton.querySelector('.scroll-text').textContent = 'Report';
-                    scrollButton.querySelector('i').className = 'fas fa-chevron-up';
-                } else {
-                    // Change to "Scroll to chat"
-                    scrollButton.classList.remove('scrolling-up');
-                    scrollButton.querySelector('.scroll-text').textContent = 'Chat';
-                    scrollButton.querySelector('i').className = 'fas fa-chevron-down';
-                }
+            if (isAtBottom) {
+                // Change to "Scroll to top"
+                scrollButton.classList.add('scrolling-up');
+                scrollButton.querySelector('.scroll-text').textContent = 'Report';
+                scrollButton.querySelector('i').className = 'fas fa-chevron-up';
+            } else {
+                // Change to "Scroll to chat"
+                scrollButton.classList.remove('scrolling-up');
+                scrollButton.querySelector('.scroll-text').textContent = 'Chat';
+                scrollButton.querySelector('i').className = 'fas fa-chevron-down';
             }
-        }
-        
-        // Add click event listener
+    }
+    
+    // Add click event listener to the scroll button
+    if (scrollButton) {
         scrollButton.addEventListener('click', function() {
             if (isAtBottom) {
                 // Scroll to the top of the report
+              isAtBottom =false;
                 reportContent.scrollIntoView({ behavior: 'smooth' });
             } else {
+              isAtBottom = true;
                 // Scroll to the chat container
                 if (chatContainer) {
                     chatContainer.scrollIntoView({ behavior: 'smooth' });
@@ -137,29 +106,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
+    }
+    
+    // Function to show scroll button when report is ready
+    function showScrollButtonForReport() {
+        if (!scrollButton) return;
         
-        // Function to show scroll button when report is ready
-        function showScrollButtonForReport() {
-            scrollButton.style.opacity = '1';
-            scrollButton.style.visibility = 'visible';
-            scrollButton.style.transform = 'translateY(0)';
-            
-            // Start listening for scroll events
-            window.addEventListener('scroll', updateScrollButton);
-            
-            // Trigger once to set initial state
-            updateScrollButton();
-        }
+        // Make button visible
+        scrollButton.classList.remove('scroll-hidden');
         
-        // Function to hide scroll button
-        function hideScrollButton() {
-            scrollButton.style.opacity = '0';
-            scrollButton.style.visibility = 'hidden';
-            scrollButton.style.transform = 'translateY(20px)';
-            
-            // Stop listening for scroll events
-            window.removeEventListener('scroll', updateScrollButton);
-        }
+        // Start listening for scroll events
+        window.addEventListener('scroll', updateScrollButton);
+        
+        // Trigger once to set initial state
+        updateScrollButton();
+    }
+    
+    // Function to hide scroll button
+    function hideScrollButton() {
+        if (!scrollButton) return;
+        
+        scrollButton.classList.add('scroll-hidden');
+        
+        // Stop listening for scroll events
+        window.removeEventListener('scroll', updateScrollButton);
     }
     
     // Auto-resize textarea as user types
@@ -287,10 +257,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('query').value = '';
             
             // Hide scroll button
-            if (scrollButton) {
-                scrollButton.style.opacity = '0';
-                scrollButton.style.visibility = 'hidden';
-            }
+            hideScrollButton();
         });
     }
     
@@ -562,9 +529,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 reportSection.scrollIntoView({ behavior: 'smooth' });
                                 
                                 // Show scroll button
-                                if (scrollButton) {
-                                    showScrollButtonForReport();
-                                }
+                                showScrollButtonForReport();
                                 
                                 // Show completion notification
                                 showNotification('Report generated successfully!', 'success');
@@ -572,11 +537,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             .catch(error => {
                                 console.error('Error loading report:', error);
                                 showError('Failed to load report: ' + error.message);
+                                hideScrollButton();
                             });
                     } else if (data.status === 'failed') {
                         clearInterval(pollInterval);
                         stopTimer();
                         showError('Report generation failed: ' + (data.error || 'Unknown error'));
+                        hideScrollButton();
                     } else if (data.status === 'running') {
                         // Update UI with progress info
                         updateResearchUI(data);
@@ -591,6 +558,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         clearInterval(pollInterval);
                         stopTimer();
                         showError('Failed to get status updates: ' + error.message);
+                        hideScrollButton();
                     }
                     // Don't stop polling on occasional network errors
                 });
@@ -701,6 +669,9 @@ document.addEventListener('DOMContentLoaded', function() {
         elapsedTime.textContent = '00:00';
         reportSection.classList.add('hidden');
         reportContent.innerHTML = '';
+        
+        // Hide scroll button
+        hideScrollButton();
         
         // Reset chat
         if (chatMessages) {
@@ -928,7 +899,7 @@ document.addEventListener('DOMContentLoaded', function() {
             card.appendChild(newBadge);
         }
         
-        // Create card content
+ // Create card content
         card.innerHTML = `
             <div class="report-card-header">
                 <div class="report-date">
@@ -1220,6 +1191,13 @@ document.addEventListener('DOMContentLoaded', function() {
             100% { transform: scale(1); }
         }
         
+        .scroll-hidden {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            transform: translateY(20px) !important;
+            pointer-events: none !important;
+        }
+        
         .scrolling-up i {
             transform: rotate(180deg);
         }
@@ -1245,4 +1223,4 @@ function fillQuery(text) {
             searchBtn.classList.remove('pulse-animation');
         }, 1000);
     }
-}
+}       // Create card content

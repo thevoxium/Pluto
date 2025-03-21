@@ -2127,13 +2127,13 @@ h6 {
   margin-top: 2px;
 }
 
-/* Add to modern-styles.css - Replace the previous scroll button CSS */
+/* Scroll button styles */
 .scroll-button {
   position: fixed;
   bottom: 30px;
   right: 30px;
   background-color: var(--primary-color);
-  color: var(--bg-color);
+  color: black;
   border-radius: 50px;
   padding: 12px 20px;
   display: flex;
@@ -2141,12 +2141,14 @@ h6 {
   gap: 8px;
   box-shadow: var(--shadow-md);
   cursor: pointer;
-  z-index: 900;
+  z-index: 10000;
   transition: opacity 0.3s ease, transform 0.3s ease;
   font-family: 'Poppins', sans-serif;
   font-weight: 500;
   font-size: 14px;
   border: none;
+  opacity: 1;
+  visibility: visible;
 }
 
 .scroll-button.scroll-hidden {
@@ -2156,6 +2158,7 @@ h6 {
   pointer-events: none;
 }
 
+/* Ensure button is visible when not hidden */
 .scroll-button:not(.scroll-hidden) {
   opacity: 1;
   visibility: visible;
