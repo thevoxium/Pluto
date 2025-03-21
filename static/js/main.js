@@ -26,13 +26,178 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalDownloadBtn = document.getElementById('modal-download-report');
     const modalCloseBtn = document.getElementById('modal-close-btn');
     
+    // Chat elements
+    const chatContainer = document.getElementById('chat-container');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendMessageBtn = document.getElementById('send-message-btn');
+    const chatToggleBtn = document.getElementById('chat-toggle-btn');
+    
+    // Modal chat elements
+    const modalChatContainer = document.getElementById('modal-chat-container');
+    const modalChatMessages = document.getElementById('modal-chat-messages');
+    const modalChatToggleBtn = document.getElementById('modal-chat-toggle-btn');
+    
     // Timer variables
     let startTime;
     let timerInterval;
     let currentTaskId = null;
     
+    // Chat state
+    let isWaitingForResponse = false;
+    
     // Load report history on page load
     loadReportHistory();
+    
+    // Create and append the scroll button to the DOM (to ensure it exists)
+    const scrollButtonHtml = `
+        <div id="scroll-button" class="scroll-button" style="
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background-color: var(--primary-color);
+            color: var(--bg-color);
+            border-radius: 50px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: var(--shadow-md);
+            cursor: pointer;
+            z-index: 900;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            border: none;
+            opacity: 0;
+            visibility: hidden;
+        ">
+            <span class="scroll-text">Chat</span>
+            <i class="fas fa-chevron-down"></i>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', scrollButtonHtml);
+    
+    // Now get the reference to the newly created button
+    const scrollButton = document.getElementById('scroll-button');
+    
+    if (scrollButton) {
+        // Variable to track if we're at the bottom
+        let isAtBottom = false;
+        
+        // Function to update button state based on scroll position
+        function updateScrollButton() {
+            if (!reportSection || reportSection.classList.contains('hidden')) return;
+            
+            // Get positions
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            const scrollPosition = window.scrollY;
+            
+            // Check if near bottom (within 300px of bottom)
+            const isNearBottom = scrollPosition + windowHeight > documentHeight - 300;
+            
+            if (isNearBottom !== isAtBottom) {
+                isAtBottom = isNearBottom;
+                
+                if (isAtBottom) {
+                    // Change to "Scroll to top"
+                    scrollButton.classList.add('scrolling-up');
+                    scrollButton.querySelector('.scroll-text').textContent = 'Report';
+                    scrollButton.querySelector('i').className = 'fas fa-chevron-up';
+                } else {
+                    // Change to "Scroll to chat"
+                    scrollButton.classList.remove('scrolling-up');
+                    scrollButton.querySelector('.scroll-text').textContent = 'Chat';
+                    scrollButton.querySelector('i').className = 'fas fa-chevron-down';
+                }
+            }
+        }
+        
+        // Add click event listener
+        scrollButton.addEventListener('click', function() {
+            if (isAtBottom) {
+                // Scroll to the top of the report
+                reportContent.scrollIntoView({ behavior: 'smooth' });
+            } else {
+                // Scroll to the chat container
+                if (chatContainer) {
+                    chatContainer.scrollIntoView({ behavior: 'smooth' });
+                    
+                    // If chat is collapsed, expand it
+                    if (chatContainer.classList.contains('collapsed') && chatToggleBtn) {
+                        toggleChatContainer(chatContainer, chatToggleBtn);
+                    }
+                    
+                    // Focus on input after scrolling
+                    setTimeout(() => {
+                        if (chatInput) chatInput.focus();
+                    }, 800);
+                }
+            }
+        });
+        
+        // Function to show scroll button when report is ready
+        function showScrollButtonForReport() {
+            scrollButton.style.opacity = '1';
+            scrollButton.style.visibility = 'visible';
+            scrollButton.style.transform = 'translateY(0)';
+            
+            // Start listening for scroll events
+            window.addEventListener('scroll', updateScrollButton);
+            
+            // Trigger once to set initial state
+            updateScrollButton();
+        }
+        
+        // Function to hide scroll button
+        function hideScrollButton() {
+            scrollButton.style.opacity = '0';
+            scrollButton.style.visibility = 'hidden';
+            scrollButton.style.transform = 'translateY(20px)';
+            
+            // Stop listening for scroll events
+            window.removeEventListener('scroll', updateScrollButton);
+        }
+    }
+    
+    // Auto-resize textarea as user types
+    if (chatInput) {
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    }
+    
+    // Toggle chat container
+    if (chatToggleBtn) {
+        chatToggleBtn.addEventListener('click', function() {
+            toggleChatContainer(chatContainer, chatToggleBtn);
+        });
+    }
+    
+    // Toggle modal chat container
+    if (modalChatToggleBtn) {
+        modalChatToggleBtn.addEventListener('click', function() {
+            toggleChatContainer(modalChatContainer, modalChatToggleBtn);
+        });
+    }
+    
+    // Send message when enter key is pressed (but allow shift+enter for new lines)
+    if (chatInput) {
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    }
+    
+    // Send message when send button is clicked
+    if (sendMessageBtn) {
+        sendMessageBtn.addEventListener('click', sendMessage);
+    }
     
     if (reportForm) {
         reportForm.addEventListener('submit', function(e) {
@@ -120,6 +285,12 @@ document.addEventListener('DOMContentLoaded', function() {
             stopTimer();
             // Reset form if needed
             document.getElementById('query').value = '';
+            
+            // Hide scroll button
+            if (scrollButton) {
+                scrollButton.style.opacity = '0';
+                scrollButton.style.visibility = 'hidden';
+            }
         });
     }
     
@@ -142,6 +313,163 @@ document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && reportModal && reportModal.classList.contains('open')) {
                 closeReportModal();
+            }
+        });
+    }
+    
+    // Function to toggle chat container visibility
+    function toggleChatContainer(container, toggleBtn) {
+        const isCollapsed = container.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+            // Expand
+            container.classList.remove('collapsed');
+            container.classList.add('opening');
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+            setTimeout(() => {
+                container.classList.remove('opening');
+            }, 300);
+        } else {
+            // Collapse
+            container.classList.add('closing');
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            setTimeout(() => {
+                container.classList.add('collapsed');
+                container.classList.remove('closing');
+            }, 300);
+        }
+    }
+    
+    // Function to send a message to the chat
+    function sendMessage() {
+        if (!chatInput || !currentTaskId || isWaitingForResponse) return;
+        
+        const message = chatInput.value.trim();
+        if (!message) return;
+        
+        // Disable input and button while processing
+        chatInput.disabled = true;
+        if (sendMessageBtn) sendMessageBtn.disabled = true;
+        isWaitingForResponse = true;
+        
+        // Add user message to chat
+        addMessageToChat('user', message);
+        
+        // Clear input
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        
+        // Add thinking indicator
+        const thinkingIndicator = document.createElement('div');
+        thinkingIndicator.className = 'thinking-indicator';
+        thinkingIndicator.innerHTML = `
+            <div class="thinking-dot"></div>
+            <div class="thinking-dot"></div>
+            <div class="thinking-dot"></div>
+        `;
+        chatMessages.appendChild(thinkingIndicator);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        // Send message to server
+        fetch(`/chat/${currentTaskId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message: message })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Remove thinking indicator
+            if (thinkingIndicator) {
+                chatMessages.removeChild(thinkingIndicator);
+            }
+            
+            if (data.error) {
+                showNotification(`Error: ${data.error}`, 'error');
+                return;
+            }
+            
+            // Add assistant's response to chat
+            addMessageToChat('assistant', data.response);
+            
+            // Enable input and button
+            chatInput.disabled = false;
+            if (sendMessageBtn) sendMessageBtn.disabled = false;
+            chatInput.focus();
+            isWaitingForResponse = false;
+        })
+        .catch(error => {
+            console.error('Error sending message:', error);
+            
+            // Remove thinking indicator
+            if (thinkingIndicator) {
+                chatMessages.removeChild(thinkingIndicator);
+            }
+            
+            // Show error in chat
+            addMessageToChat('assistant', `Sorry, there was an error processing your request: ${error.message}`);
+            
+            // Enable input and button
+            chatInput.disabled = false;
+            if (sendMessageBtn) sendMessageBtn.disabled = false;
+            isWaitingForResponse = false;
+            
+            showNotification('Failed to send message. Please try again.', 'error');
+        });
+    }
+    
+    // Function to add a message to the chat
+    function addMessageToChat(role, content, timestamp) {
+        if (!chatMessages) return;
+        
+        const messageTime = timestamp || new Date();
+        const formattedTime = messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${role}`;
+        
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = `message-bubble ${role}-bubble`;
+        
+        // Convert markdown-like syntax to HTML
+        let formattedContent = content
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+        
+        bubbleDiv.innerHTML = formattedContent;
+        
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'message-time';
+        timeSpan.textContent = formattedTime;
+        
+        bubbleDiv.appendChild(timeSpan);
+        messageDiv.appendChild(bubbleDiv);
+        chatMessages.appendChild(messageDiv);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // Function to load chat history from server response
+    function loadChatHistory(history) {
+        if (!chatMessages || !history || !Array.isArray(history)) return;
+        
+        // Clear existing messages
+        chatMessages.innerHTML = '';
+        
+        // Add each message
+        history.forEach(msg => {
+            if (msg.role !== 'system') {
+                addMessageToChat(msg.role, msg.content);
             }
         });
     }
@@ -206,6 +534,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                 // Set report content
                                 reportContent.innerHTML = reportData.html_content;
                                 
+                                // Load chat history if available
+                                if (reportData.chat_history && reportData.chat_history.length > 0) {
+                                    loadChatHistory(reportData.chat_history);
+                                }
+                                
                                 // Apply syntax highlighting to code blocks
                                 document.querySelectorAll('pre code').forEach((block) => {
                                     hljs.highlightBlock(block);
@@ -227,6 +560,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                 
                                 // Scroll to report section with smooth animation
                                 reportSection.scrollIntoView({ behavior: 'smooth' });
+                                
+                                // Show scroll button
+                                if (scrollButton) {
+                                    showScrollButtonForReport();
+                                }
                                 
                                 // Show completion notification
                                 showNotification('Report generated successfully!', 'success');
@@ -364,6 +702,11 @@ document.addEventListener('DOMContentLoaded', function() {
         reportSection.classList.add('hidden');
         reportContent.innerHTML = '';
         
+        // Reset chat
+        if (chatMessages) {
+            chatMessages.innerHTML = '';
+        }
+        
         // Reset status steps
         const statusSteps = document.querySelectorAll('.status-step');
         statusSteps.forEach(step => {
@@ -408,8 +751,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
         }
     }
-    
-    function startTimer() {
+  function startTimer() {
         startTime = new Date();
         timerInterval = setInterval(updateTimer, 1000);
     }
@@ -545,8 +887,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayReportHistory(reports) {
         // If container doesn't exist, exit
         if (!reportHistoryContainer) return;
-        
-        // Clear report container except empty state
+
+      // Clear report container except empty state
         const elements = reportHistoryContainer.querySelectorAll(':not(#empty-reports-state)');
         elements.forEach(el => el.remove());
         
@@ -662,6 +1004,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 modalReportContent.innerHTML = reportData.html_content;
                 
+                // Load chat history in the modal if available
+                if (modalChatMessages && reportData.chat_history && reportData.chat_history.length > 0) {
+                    // Clear existing messages
+                    modalChatMessages.innerHTML = '';
+                    
+                    // Add each message
+                    reportData.chat_history.forEach(msg => {
+                        if (msg.role !== 'system') {
+                            const messageDiv = document.createElement('div');
+                            messageDiv.className = `chat-message ${msg.role}`;
+                            
+                            const bubbleDiv = document.createElement('div');
+                            bubbleDiv.className = `message-bubble ${msg.role}-bubble`;
+                            
+                            // Format content
+                            let formattedContent = msg.content
+                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                                .replace(/`(.*?)`/g, '<code>$1</code>')
+                                .replace(/\n/g, '<br>');
+                            
+                            bubbleDiv.innerHTML = formattedContent;
+                            messageDiv.appendChild(bubbleDiv);
+                            modalChatMessages.appendChild(messageDiv);
+                        }
+                    });
+                    
+                    // Show the chat container if we have messages
+                    if (modalChatContainer && reportData.chat_history.length > 1) {
+                        modalChatContainer.style.display = 'flex';
+                    } else if (modalChatContainer) {
+                        modalChatContainer.style.display = 'none';
+                    }
+                } else if (modalChatContainer) {
+                    modalChatContainer.style.display = 'none';
+                }
+                
                 // Apply syntax highlighting
                 document.querySelectorAll('#modal-report-content pre code').forEach((block) => {
                     hljs.highlightBlock(block);
@@ -742,6 +1122,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!reportModal.classList.contains('open')) {
                 if (modalReportContent) modalReportContent.innerHTML = '';
                 if (modalReportTitle) modalReportTitle.textContent = 'Report';
+                if (modalChatMessages) modalChatMessages.innerHTML = '';
             }
         }, 300);
     }
@@ -837,6 +1218,10 @@ document.addEventListener('DOMContentLoaded', function() {
             0% { transform: scale(1); }
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
+        }
+        
+        .scrolling-up i {
+            transform: rotate(180deg);
         }
     `;
     document.head.appendChild(style);

@@ -145,6 +145,28 @@
             <div class="markdown-body" id="report-content">
               <!-- Report content will be inserted here -->
             </div>
+
+            <!-- Chat Interface -->
+            <div id="chat-container" class="chat-container">
+              <div class="chat-header">
+                <h3><i class="fas fa-comments"></i> Ask follow-up questions</h3>
+                <button id="chat-toggle-btn" class="chat-toggle-btn">
+                  <i class="fas fa-chevron-up"></i>
+                </button>
+              </div>
+              <div class="chat-messages" id="chat-messages">
+                <!-- Chat messages will be dynamically added here -->
+              </div>
+              <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                  <textarea id="chat-input" class="chat-input" placeholder="Ask a question about this report..."
+                    rows="1"></textarea>
+                </div>
+                <button id="send-message-btn" class="send-button">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -166,10 +188,27 @@
           <div class="markdown-body" id="modal-report-content">
             <!-- Report content will be inserted here -->
           </div>
+
+          <!-- Modal Chat Interface for Past Reports -->
+          <div id="modal-chat-container" class="chat-container">
+            <div class="chat-header">
+              <h3><i class="fas fa-comments"></i> Follow-up questions</h3>
+              <button id="modal-chat-toggle-btn" class="chat-toggle-btn">
+                <i class="fas fa-chevron-up"></i>
+              </button>
+            </div>
+            <div class="chat-messages" id="modal-chat-messages">
+              <!-- Chat messages will be dynamically added here for modal view -->
+            </div>
+          </div>
         </div>
       </div>
     </div>
-
+    <!-- Add this to index.html, right before the closing </body> tag -->
+    <div id="scroll-button" class="scroll-button hidden">
+      <span class="scroll-text">Chat</span>
+      <i class="fas fa-chevron-down"></i>
+    </div>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
 </body>

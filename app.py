@@ -106,6 +106,12 @@ def generate_report_task(query, task_id):
             extensions=['markdown.extensions.tables', 'markdown.extensions.fenced_code']
         )
         
+        # Initialize chat history
+        chat_history = [
+            {"role": "system", "content": "You are an AI research assistant helping users explore topics from a comprehensive report."},
+            {"role": "assistant", "content": f"I've generated a comprehensive report on '{query}'. You can ask me any questions about the report or request further analysis on specific aspects."}
+        ]
+        
         # Save the result
         background_tasks[task_id]['status'] = 'completed'
         background_tasks[task_id]['result'] = {
@@ -114,6 +120,7 @@ def generate_report_task(query, task_id):
             'filename': output_file,
             'title': query
         }
+        background_tasks[task_id]['chat_history'] = chat_history
         
         # Make sure progress bar reaches 100%
         update_progress(task_id, "Report complete!", 100, 7, 7, None)
@@ -192,9 +199,15 @@ def report_content(task_id):
         return jsonify({'error': 'Report not found or not completed yet'}), 404
     
     result = background_tasks[task_id]['result']
+    # Include chat history
+    chat_history = background_tasks[task_id].get('chat_history', [])
+    # Filter out system messages for the client
+    client_chat_history = [msg for msg in chat_history if msg['role'] != 'system']
+    
     return jsonify({
         'html_content': result['html'],
-        'title': result['title']
+        'title': result['title'],
+        'chat_history': client_chat_history
     })
 
 # Keep this endpoint for backward compatibility and direct downloads
@@ -217,6 +230,100 @@ def download_report(task_id):
     # Return the markdown file for download
     filename = background_tasks[task_id]['result']['filename']
     return send_file(filename, as_attachment=True)
+
+# New endpoint to handle chat messages
+@app.route('/chat/<task_id>', methods=['POST'])
+def chat(task_id):
+    if task_id not in background_tasks or background_tasks[task_id]['status'] != 'completed':
+        return jsonify({'error': 'Report not found or not completed yet'}), 404
+    
+    # Get the user message
+    data = request.json
+    if not data or 'message' not in data:
+        return jsonify({'error': 'No message provided'}), 400
+    
+    user_message = data['message']
+    
+    # Get report content to use as context
+    report_content = background_tasks[task_id]['result']['raw_markdown']
+    
+    # Get existing chat history
+    if 'chat_history' not in background_tasks[task_id]:
+        background_tasks[task_id]['chat_history'] = [
+            {"role": "system", "content": "You are an AI research assistant helping users explore topics from a comprehensive report."},
+            {"role": "assistant", "content": f"I've generated a comprehensive report on '{background_tasks[task_id]['query']}'. You can ask me any questions about the report or request further analysis on specific aspects."}
+        ]
+    
+    chat_history = background_tasks[task_id]['chat_history']
+    
+    # Add user message to chat history
+    chat_history.append({"role": "user", "content": user_message})
+    
+    try:
+        # Call the OpenRouter API to get a response
+        import requests
+        
+        # OpenRouter API endpoint
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        # Headers
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+            "Content-Type": "application/json"
+        }
+        
+        # Create the messages array with system message, context, and chat history
+        messages = [
+            {
+                "role": "system",
+                "content": f"""You are an AI research assistant helping users explore topics from a comprehensive report. Do not limit yourself to this report, this is just to proide ou some helpful context. If there is something you don't know, you can refer this report.  
+                The following is the content of a research report that has been generated:
+                
+                {report_content[:50000]}  # Limit context to avoid token limits
+                
+                You can use the report above as a context but do not limit yourself to the existing context, use your own knowledge wherever required. You can try to Answer the user's questions based on this report.
+                
+                Be helpful and accurate. You know that you are smart. 
+                """
+            }
+        ]
+        
+        # Add chat history (except for the system message which is replaced with our new context-rich one)
+        for msg in chat_history:
+            if msg["role"] != "system":
+                messages.append(msg)
+        
+        payload = {
+            "model": "google/gemini-2.0-flash-001",  # Use the same model as report generation
+            "messages": messages
+        }
+        
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        if response.status_code == 200:
+            result = response.json()
+            if "error" in result:
+                return jsonify({'error': f"API Error: {result['error']}"}), 500
+                
+            assistant_response = result["choices"][0]["message"]["content"]
+            
+            # Add assistant response to chat history
+            chat_history.append({"role": "assistant", "content": assistant_response})
+            
+            # Save updated chat history
+            background_tasks[task_id]['chat_history'] = chat_history
+            save_report_data(task_id)
+            
+            return jsonify({
+                'response': assistant_response,
+                'chat_history': [msg for msg in chat_history if msg['role'] != 'system']  # Filter out system message
+            })
+        else:
+            return jsonify({'error': f"HTTP Error: {response.status_code} - {response.text}"}), 500
+    
+    except Exception as e:
+        print(f"Error in chat: {str(e)}")
+        return jsonify({'error': f"Failed to get response: {str(e)}"}), 500
 
 # Add custom route to track search results
 @app.route('/add_search_result/<task_id>', methods=['POST'])
