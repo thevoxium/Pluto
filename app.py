@@ -5,20 +5,56 @@ import markdown
 import time
 import threading
 import uuid
+import pickle
 from werkzeug.utils import secure_filename
 from generatereport import ConsultantReportGenerator
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # For session management
 app.config['UPLOAD_FOLDER'] = 'static/reports'
+app.config['REPORTS_DATA'] = 'static/reports/reports_data'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['REPORTS_DATA'], exist_ok=True)
 
 # Dictionary to store background tasks
 background_tasks = {}
 
+# Load any existing saved report data
+def load_report_data():
+    try:
+        # Load saved report data
+        for file in os.listdir(app.config['REPORTS_DATA']):
+            if file.endswith('.pkl'):
+                task_id = file.split('.')[0]
+                file_path = os.path.join(app.config['REPORTS_DATA'], file)
+                with open(file_path, 'rb') as f:
+                    report_data = pickle.load(f)
+                    background_tasks[task_id] = report_data
+        print(f"Loaded {len(background_tasks)} saved reports")
+    except Exception as e:
+        print(f"Error loading saved reports: {str(e)}")
+
+# Save report data to persistent storage
+def save_report_data(task_id):
+    try:
+        if task_id in background_tasks and background_tasks[task_id]['status'] == 'completed':
+            file_path = os.path.join(app.config['REPORTS_DATA'], f"{task_id}.pkl")
+            with open(file_path, 'wb') as f:
+                pickle.dump(background_tasks[task_id], f)
+            print(f"Saved report data for task {task_id}")
+    except Exception as e:
+        print(f"Error saving report data: {str(e)}")
+
+# Load existing reports on startup
+load_report_data()
+
 # Progress callback to update task status
 def update_progress(task_id, message, progress, current_step=None, total_steps=None, search_results=None):
     if task_id in background_tasks:
+        # Make sure progress doesn't exceed 99% until we're completely done
+        if progress >= 100 and message != "Report complete!":
+            progress = 99
+            
         progress_data = {
             'percent': progress,
             'message': message
@@ -78,6 +114,13 @@ def generate_report_task(query, task_id):
             'filename': output_file,
             'title': query
         }
+        
+        # Make sure progress bar reaches 100%
+        update_progress(task_id, "Report complete!", 100, 7, 7, None)
+        
+        # Save report data to persistent storage
+        save_report_data(task_id)
+        
     except Exception as e:
         background_tasks[task_id]['status'] = 'failed'
         background_tasks[task_id]['error'] = str(e)
@@ -211,12 +254,21 @@ def cleanup_tasks():
     for task_id, task in background_tasks.items():
         if current_time - task['created_at'] > 86400:  # 24 hours
             expired_tasks.append(task_id)
+            
+            # Also remove the saved file
+            try:
+                file_path = os.path.join(app.config['REPORTS_DATA'], f"{task_id}.pkl")
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                print(f"Error removing saved report: {str(e)}")
     
     # Remove expired tasks
     for task_id in expired_tasks:
         del background_tasks[task_id]
     
     return jsonify({'removed': len(expired_tasks)})
+
 @app.route('/api/reports', methods=['GET'])
 def get_reports():
     """API endpoint to get list of all reports"""
@@ -235,5 +287,6 @@ def get_reports():
     reports.sort(key=lambda x: x['created_at'], reverse=True)
     
     return jsonify(reports)
+
 if __name__ == '__main__':
     app.run(debug=True)

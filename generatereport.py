@@ -463,12 +463,17 @@ Format your response as a JSON object with a "suggestions" array containing exac
                     {"section": "Future Directions", "description": "Emerging possibilities and likely future evolution of this field"}
                 ]
             }
-    
+
     def generate_section_content(self, section: Dict[str, str], llm, vectorstore: Chroma, section_index: int, total_sections: int) -> str:
         """Generate content for a specific section of the consultant report."""
-        # Update progress
-        section_progress = 70 + (section_index / total_sections) * 25
-        self.update_progress(f"Writing section: {section['section']}", section_progress)
+        # Calculate progress percentage for this section (spread from 70% to 95%)
+        # This spreads the last sections better across the progress bar to prevent the stalling effect
+        section_progress_start = 70
+        section_progress_range = 25
+        section_progress = section_progress_start + (section_index / total_sections) * section_progress_range
+        
+        # Update progress with more specific information
+        self.update_progress(f"Writing section ({section_index+1}/{total_sections}): {section['section']}", section_progress)
         
         # Retrieve documents relevant to this specific section
         section_query = f"{self.query} {section['section']} {section['description']}"
@@ -527,6 +532,12 @@ Format your response as a JSON object with a "suggestions" array containing exac
             """
         )
         
+        # Provide more granular progress updates for the last sections
+        if section_index >= total_sections - 2:
+            # For the last two sections, provide more frequent updates
+            self.update_progress(f"Finalizing section ({section_index+1}/{total_sections}): {section['section']}...", 
+                                section_progress + (section_progress_range / total_sections) * 0.3)
+            
         # Generate section content
         section_chain = LLMChain(llm=llm, prompt=section_prompt)
         section_content = section_chain.run(
@@ -539,6 +550,11 @@ Format your response as a JSON object with a "suggestions" array containing exac
         # Clean up any potential headings that the model might have included anyway
         section_content = re.sub(rf"^#+\s*{re.escape(section['section'])}.*?\n", "", section_content, flags=re.IGNORECASE)
         section_content = re.sub(r"^#+.*?\n", "", section_content) # Remove any other headings at the beginning
+        
+        # Update progress after completing this section
+        completed_section_progress = section_progress_start + ((section_index + 1) / total_sections) * section_progress_range
+        self.update_progress(f"Completed section ({section_index+1}/{total_sections}): {section['section']}", 
+                            completed_section_progress)
         
         return section_content.strip()
     
@@ -622,7 +638,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
         # Generate each section
         total_sections = len(outline['sections'])
         for i, section in enumerate(outline['sections']):
-            print(f"Generating section: {section['section']}...")
+            print(f"Generating section {i+1}/{total_sections}: {section['section']}...")
             section_content = self.generate_section_content(section, llm, vectorstore, i, total_sections)
             report_sections.append(f"## {section['section']}\n{section_content}\n")
             
@@ -631,6 +647,7 @@ Format your response as a JSON object with a "suggestions" array containing exac
         
         # Generate bibliography with sources
         print("Generating bibliography...")
+        self.update_progress("Finalizing report...", 95)
         sources = self.generate_sources(documents)
         report_sections.append("## References\n" + sources)
         

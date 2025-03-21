@@ -147,13 +147,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function pollTaskStatus(taskId) {
+        // Track consecutive errors
+        let errorCount = 0;
+        
         // Store for adding to history later
         let reportTitle = "";
         
         const pollInterval = setInterval(() => {
             fetch(`/status/${taskId}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    // Reset error count on successful response
+                    errorCount = 0;
+                    
                     if (data.status === 'completed') {
                         clearInterval(pollInterval);
                         stopTimer();
@@ -161,9 +172,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Complete all status steps
                         setStatus('completed');
                         
+                        // Update progress bar to 100%
+                        progressBar.style.width = '100%';
+                        statusMessage.textContent = 'Report complete!';
+                        
                         // When completed, fetch the report content and show it in the same page
                         fetch(`/report_content/${taskId}`)
-                            .then(response => response.json())
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! Status: ${response.status}`);
+                                }
+                                return response.json();
+                            })
                             .then(reportData => {
                                 if (reportData.error) {
                                     throw new Error(reportData.error);
@@ -226,7 +246,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
                 .catch(error => {
                     console.error('Error polling status:', error);
-                    // Don't stop polling on network errors
+                    errorCount++;
+                    
+                    // If we've had 5 consecutive errors, stop polling
+                    if (errorCount >= 5) {
+                        clearInterval(pollInterval);
+                        stopTimer();
+                        showError('Failed to get status updates: ' + error.message);
+                    }
+                    // Don't stop polling on occasional network errors
                 });
         }, 1000); // Poll every second for responsive UI
     }
@@ -261,6 +289,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 percent = data.progress;
             }
             
+            // Ensure the progress bar transitions smoothly
+            progressBar.style.transition = 'width 0.5s ease';
             progressBar.style.width = `${percent}%`;
         }
         
@@ -582,7 +612,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add click event to view the report
         card.addEventListener('click', function() {
-            viewReport(report.id);
+          viewReport(report.id);
         });
         
         return card;
@@ -608,9 +638,19 @@ document.addEventListener('DOMContentLoaded', function() {
         reportModal.classList.add('open');
         document.body.style.overflow = 'hidden'; // Prevent body scrolling
         
-        // Fetch report content
+        // Fetch report content with retry mechanism
+        fetchReportWithRetry(taskId, 0);
+    }
+    
+    // Add a retry mechanism for fetching reports to handle server restarts
+    function fetchReportWithRetry(taskId, retryCount, maxRetries = 2) {
         fetch(`/report_content/${taskId}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(reportData => {
                 if (reportData.error) {
                     throw new Error(reportData.error);
@@ -641,13 +681,54 @@ document.addEventListener('DOMContentLoaded', function() {
                 markReportAsViewed(taskId);
             })
             .catch(error => {
-                modalReportContent.innerHTML = `
-                    <div class="error-message">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        Failed to load report: ${error.message}
-                    </div>
-                `;
+                console.error(`Error loading report (attempt ${retryCount + 1}):`, error);
+                
+                if (retryCount < maxRetries) {
+                    // Show retry message
+                    modalReportContent.innerHTML = `
+                        <div class="loading-container">
+                            <div class="spinner-large"></div>
+                            <p>Retrying to load report... (${retryCount + 1}/${maxRetries + 1})</p>
+                        </div>
+                    `;
+                    
+                    // Retry after a delay
+                    setTimeout(() => {
+                        fetchReportWithRetry(taskId, retryCount + 1, maxRetries);
+                    }, 1000);
+                } else {
+                    // Show error after all retries fail
+                    modalReportContent.innerHTML = `
+                        <div class="error-message">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Failed to load report: ${error.message}
+                        </div>
+                        <div style="margin-top: 20px; text-align: center;">
+                            <p>The report may no longer be available on the server.</p>
+                            <button id="remove-report-btn" class="action-button" style="margin-top: 15px;">
+                                <i class="fas fa-trash"></i> Remove from history
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add remove from history button functionality
+                    const removeBtn = document.getElementById('remove-report-btn');
+                    if (removeBtn) {
+                        removeBtn.addEventListener('click', function() {
+                            removeReportFromHistory(taskId);
+                            closeReportModal();
+                            showNotification('Report removed from history', 'info');
+                        });
+                    }
+                }
             });
+    }
+    
+    function removeReportFromHistory(taskId) {
+        const reports = getReportHistory();
+        const updatedReports = reports.filter(report => report.id !== taskId);
+        saveReportHistory(updatedReports);
+        displayReportHistory(updatedReports);
     }
     
     function closeReportModal() {
@@ -699,7 +780,8 @@ document.addEventListener('DOMContentLoaded', function() {
         let executiveSummary = null;
         const h2Elements = tempDiv.querySelectorAll('h2');
         for (let i = 0; i < h2Elements.length; i++) {
-            if (h2Elements[i].textContent.includes('Executive Summary')) {
+            if (h2Elements[i].textContent.includes('Executive Summary') || 
+                h2Elements[i].textContent.includes('Abstract')) {
                 executiveSummary = h2Elements[i];
                 break;
             }
