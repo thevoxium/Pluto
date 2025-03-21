@@ -1,2 +1,4 @@
 temp
+*.md 
+!README.md
 __pycache__

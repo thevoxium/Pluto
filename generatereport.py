@@ -1,6 +1,3 @@
-# This is a modified version of your ConsultantReportGenerator class
-# with enhanced progress reporting and search result tracking
-
 import os
 import json
 import time
@@ -28,7 +25,7 @@ OPENAI_API_KEY = os.getenv("OPENAI")  # For embeddings
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # For LLM access
 
 # Configuration
-MAX_SEARCH_SUGGESTIONS = 5
+MAX_SEARCH_SUGGESTIONS = 10
 RESULTS_PER_SUGGESTION = 5
 MAX_WORKERS = 5
 CHUNK_SIZE = 2000
@@ -97,7 +94,31 @@ class ConsultantReportGenerator:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a top-tier management consultant from BCG who helps with strategic research. Provide 5 specific search queries that would gather the most valuable business and market intelligence on this topic. Consider competitive landscape, market trends, stakeholder analysis, strategic opportunities, and implementation challenges."
+                    "content": """You are a versatile research assistant with expertise in diverse fields including humanities, sciences, arts, technology, business, and more.
+
+Your task is to analyze a query and generate 10 diverse search terms that will gather comprehensive information across multiple dimensions of the topic.
+
+Adapt your search strategy to the nature of the query:
+1. For scientific/technical topics: Include search terms covering theoretical foundations, practical applications, and recent developments
+2. For humanities/social sciences: Include terms exploring historical context, different perspectives, social implications, and case studies
+3. For practical subjects: Include terms for methodologies, best practices, examples, and comparative analyses
+4. For creative fields: Include terms for techniques, influential works, evolution of the field, and contemporary trends
+
+Your search terms should balance:
+- Foundational knowledge (30%)
+- Intermediate insights (40%)
+- Advanced perspectives (30%)
+
+Deliberately include search terms that will uncover:
+- Different viewpoints and interpretations
+- Historical evolution and context
+- Contemporary applications and relevance
+- Future trends and emerging directions
+- Practical examples and case studies
+- Comparative analyses
+- Cultural or geographic variations when relevant
+
+Format your response as a JSON object with a "suggestions" array containing exactly 10 search queries."""
                 },
                 {
                     "role": "user",
@@ -126,13 +147,18 @@ class ConsultantReportGenerator:
     
     def _fallback_suggestions(self, query: str) -> List[str]:
         """Generate fallback suggestions if API fails."""
-        # Business-focused fallback queries
+        # More balanced, versatile fallback queries
         return [
-            f"{query} market analysis",
-            f"{query} competitive landscape",
-            f"{query} strategic opportunities",
-            f"{query} industry trends",
-            f"{query} implementation challenges"
+            f"{query} comprehensive overview",
+            f"{query} historical development and evolution",
+            f"{query} practical applications and examples",
+            f"{query} different perspectives and approaches",
+            f"{query} case studies and real-world implementations",
+            f"{query} current trends and future directions",
+            f"{query} comparative analysis",
+            f"{query} best practices and methodologies",
+            f"{query} challenges and limitations",
+            f"{query} influential works and key contributors"
         ]
     
     def search_web(self, suggestions: List[str]) -> Dict[str, List[str]]:
@@ -350,42 +376,57 @@ class ConsultantReportGenerator:
     
     def create_consultant_outline(self, llm, relevant_docs: List[Document]) -> Dict[str, Any]:
         """Generate a consultant report outline based on the query and relevant documents."""
-        self.update_progress("Generating report outline...", 60)
+        self.update_progress("Generating comprehensive report outline...", 60)
         # Combine relevant document content
-        contexts = [doc.page_content for doc in relevant_docs[:5]]  # Use top 5 most relevant docs
+        contexts = [doc.page_content for doc in relevant_docs[:8]]
         context_text = "\n\n".join(contexts)
         
-        # Create outline prompt
+        # Create outline prompt for a versatile approach across fields
         outline_prompt = PromptTemplate(
             input_variables=["query", "context"],
             template="""
-            You are a top-tier management consultant creating a strategic report. Based on the following client query and retrieved information, 
-            create a detailed outline for a strategic consultant report. The outline should include:
+            You are a versatile research assistant with expertise in diverse fields. Your goal is to create a comprehensive, 
+            insightful deep-dive report on any topic, adapting your approach to the subject matter.
             
-            1. A title (should be catchy and business-focused)
-            2. An executive summary (concise overview with key findings and recommendations)
-            3. Section headers for:
-               - Strategic Context (industry landscape, market dynamics)
-               - Key Findings (data-driven insights)
-               - Strategic Options (3-5 potential approaches)
-               - Recommended Approach (detail your chosen strategy)
-               - Implementation Roadmap (phased plan with timelines)
-               - Financial Implications (costs, benefits, ROI)
-               - Risk Assessment & Mitigation 
-               - Conclusion & Next Steps
-            4. For each section, provide a brief description of what should be covered
+            Based on the following query and retrieved information, create a detailed outline for an in-depth report. 
+            The outline should be appropriate to the field and nature of the query - whether it's humanities, sciences, 
+            arts, business, technology, or any other domain.
             
-            CLIENT QUERY: {query}
+            Your outline must include:
+            
+            1. An engaging, informative title that captures the essence of the topic
+            2. A concise abstract (150-200 words) that previews the main insights and value of the report
+            3. 5-7 major section headers that:
+               - Logically progress through the topic
+               - Adapt naturally to the subject matter
+               - Cover diverse aspects appropriate to the field
+               - Include contextual background where helpful
+               - Examine practical applications when relevant
+               - Consider different perspectives or approaches
+               - Address current developments and future directions
+               
+            4. For each section, provide a brief description (50-75 words) of what will be covered
+            
+            IMPORTANT GUIDELINES:
+            - Adapt your structure to the nature of the query - different types of questions require different approaches
+            - For scientific/technical topics: balance conceptual understanding with practical implications
+            - For humanities/social topics: include historical context, different perspectives, and real-world relevance
+            - For practical queries: focus on methodologies, examples, and applications
+            - For creative topics: explore techniques, notable works, and evolutionary trends
+            - Avoid overly abstract or purely theoretical sections unless the query specifically calls for them
+            - Ensure the outline would be helpful to someone seeking comprehensive understanding
+            
+            QUERY: {query}
             
             RELEVANT INFORMATION:
             {context}
             
             Format your response as JSON with the following structure:
             {{
-                "title": "The catchy consultant report title",
-                "executive_summary": "Brief executive summary description",
+                "title": "The engaging title",
+                "abstract": "Concise abstract previewing main insights",
                 "sections": [
-                    {{"section": "Section Name", "description": "What to cover in this section"}},
+                    {{"section": "Section Name", "description": "Brief description of what this section will cover"}},
                     // other sections here
                 ]
             }}
@@ -410,15 +451,16 @@ class ConsultantReportGenerator:
             print(f"Raw response: {response}")
             # Fallback simple structure
             return {
-                "title": f"Strategic Analysis: {self.query}",
-                "executive_summary": "This report provides strategic insights and recommendations based on comprehensive analysis.",
+                "title": f"A Comprehensive Guide to {self.query}",
+                "abstract": "This report explores key aspects, developments, and insights related to this topic, providing valuable context and practical understanding for readers seeking comprehensive knowledge.",
                 "sections": [
-                    {"section": "Strategic Context", "description": "Overview of current situation"},
-                    {"section": "Key Findings", "description": "Main insights from analysis"},
-                    {"section": "Strategic Options", "description": "Potential strategic approaches"},
-                    {"section": "Recommended Approach", "description": "Our recommended strategy"},
-                    {"section": "Implementation Roadmap", "description": "Steps for implementation"},
-                    {"section": "Conclusion & Next Steps", "description": "Summary and action items"}
+                    {"section": "Background and Context", "description": "Essential historical and contextual foundation of the topic"},
+                    {"section": "Core Concepts and Frameworks", "description": "Key ideas, models, and approaches that structure understanding of this area"},
+                    {"section": "Practical Applications", "description": "Real-world implementations and uses in various contexts"},
+                    {"section": "Different Perspectives", "description": "Various viewpoints, methodologies, or schools of thought"},
+                    {"section": "Challenges and Limitations", "description": "Current obstacles, debates, and boundaries of knowledge"},
+                    {"section": "Current Trends", "description": "Recent developments and contemporary practices"},
+                    {"section": "Future Directions", "description": "Emerging possibilities and likely future evolution of this field"}
                 ]
             }
     
@@ -430,40 +472,58 @@ class ConsultantReportGenerator:
         
         # Retrieve documents relevant to this specific section
         section_query = f"{self.query} {section['section']} {section['description']}"
-        relevant_docs = vectorstore.similarity_search(section_query, k=3)
+        relevant_docs = vectorstore.similarity_search(section_query, k=8)
         
         # Extract context from relevant documents
         contexts = [doc.page_content for doc in relevant_docs]
         context_text = "\n\n".join(contexts)
         
-        # Create prompt for section generation
+        # Create prompt for section generation with adaptive approach
         section_prompt = PromptTemplate(
             input_variables=["section_name", "section_description", "context", "query"],
             template="""
-            You are a senior management consultant writing a section of a strategic report on "{query}".
+            You are a versatile research assistant writing a section of a comprehensive report on "{query}".
             
             SECTION: {section_name}
             DESCRIPTION: {section_description}
             
-            Relevant research information:
+            Relevant information from research:
             {context}
             
-            Write a detailed, well-structured section for the consulting report. Use clear, direct language focused on 
-            business insights and actionable recommendations. The section should be thorough (around 500-700 words) with 
-            proper structure including bullet points and numbered lists where appropriate.
+            Write a comprehensive, insightful section (approximately 800-1200 words) that provides valuable understanding 
+            to readers. Your writing should:
             
-            Make sure to:
-            - Focus on strategic implications and business value
-            - Include data-driven insights when available
-            - Provide concrete, actionable recommendations
-            - Use business-appropriate terminology (ROI, KPIs, market share, etc.)
-            - Structure content with clear subheadings
-            - Include bullet points for key takeaways
-            - Where appropriate, frame your points as "Key Insight:" or "Critical Consideration:"
-            - End sections with clear "Next Steps" or "Recommended Actions" when appropriate
+            1. ADAPT TO THE SUBJECT MATTER:
+               - For scientific/technical topics: Explain concepts clearly with appropriate depth
+               - For humanities/social topics: Provide context, varied perspectives, and meaningful examples
+               - For practical topics: Include methodologies, applications, and real-world examples
+               - For creative/artistic topics: Explore techniques, influences, and significant works
             
-            IMPORTANT: Do not include the section title in your response, as it will be added separately.
-            Only write the content for the section.
+            2. BE INFORMATIVE AND ENGAGING:
+               - Use a clear, accessible writing style
+               - Explain specialized terminology when needed
+               - Include specific examples, cases, or illustrations
+               - Weave in insightful analysis and not just facts
+               - Present information in a logical flow
+            
+            3. OFFER BALANCED COVERAGE:
+               - Include diverse viewpoints when relevant
+               - Consider historical context when helpful
+               - Connect theory to practice where appropriate
+               - Address nuances and complexities
+               - Acknowledge ongoing debates or uncertainties
+            
+            4. PROVIDE DEPTH AND SUBSTANCE:
+               - Go beyond surface-level information
+               - Include specific data, figures, or examples when relevant
+               - Discuss implications and significance
+               - Connect this section to the broader topic
+               - Offer insights that would help readers develop a sophisticated understanding
+            
+            This section should be informative, well-structured, and directly relevant to helping readers develop a 
+            comprehensive understanding of the topic. Use a conversational yet substantive tone.
+            
+            Do not include the section title in your response, as it will be added separately.
             """
         )
         
@@ -492,10 +552,10 @@ class ConsultantReportGenerator:
             if url and url != "Unknown" and url not in sources:
                 sources[url] = source
         
-        # Format sources in a BCG-style appendix format
+        # Format sources in a reference format
         references = []
         for i, (url, source) in enumerate(sources.items(), 1):
-            references.append(f"{i}. {source}. Available at: {url}")
+            references.append(f"{i}. {source}. URL: {url}")
         
         return "\n".join(references)
     
@@ -537,13 +597,13 @@ class ConsultantReportGenerator:
         relevant_docs = vectorstore.similarity_search(query, k=10)
         
         # Step 8: Generate consultant report outline
-        print("Generating consultant report outline...")
+        print("Generating comprehensive report outline...")
         outline = self.create_consultant_outline(llm, relevant_docs)
         print(f"Generated outline for report: {outline['title']}")
         
         # Step 9: Generate content for each section
-        print("Generating consultant report content section by section...")
-        self.update_progress("Writing report sections...", 70)
+        print("Generating content section by section...")
+        self.update_progress("Writing detailed sections...", 70)
         report_sections = []
         
         # Current date for the report
@@ -553,8 +613,11 @@ class ConsultantReportGenerator:
         report_sections.append(f"# {outline['title']}\n")
         report_sections.append(f"### {current_date}\n")
         
-        # Add executive summary
-        report_sections.append(f"## Executive Summary\n{outline['executive_summary']}\n")
+        # Add abstract
+        report_sections.append(f"## Abstract\n{outline['abstract']}\n")
+        
+        # Add table of contents header (actual ToC will be generated by markdown renderer)
+        report_sections.append("## Table of Contents\n")
         
         # Generate each section
         total_sections = len(outline['sections'])
@@ -566,27 +629,29 @@ class ConsultantReportGenerator:
             # Add a short delay to avoid rate limiting
             time.sleep(1)
         
-        # Generate appendix with sources
-        print("Generating sources appendix...")
+        # Generate bibliography with sources
+        print("Generating bibliography...")
         sources = self.generate_sources(documents)
-        report_sections.append("## Appendix: Sources\n" + sources)
+        report_sections.append("## References\n" + sources)
         
-        # Add disclaimer
-        disclaimer = """
-## Disclaimer
+        # Add research methodology note
+        research_note = """
+## Research Methodology
 
-This report has been prepared by an AI-powered tool that synthesizes information from publicly available sources. While effort has been made to ensure accuracy and comprehensiveness, this document should be considered as preliminary advisory material. Professional judgment should be exercised when implementing any recommendations contained herein. The information presented is current as of the report date and may require updates as market conditions change.
+This comprehensive report was generated through a research process that synthesizes information from multiple diverse sources. Content was gathered through advanced search strategies targeting various aspects of the topic, processed using semantic analysis for relevance, and synthesized into a cohesive narrative.
+
+The information presented aims to provide a well-rounded understanding of the subject matter with attention to different perspectives and applications. References to original sources are provided in the bibliography.
 """
-        report_sections.append(disclaimer)
+        report_sections.append(research_note)
         
         # Combine all sections into the final report
         final_report = "\n\n".join(report_sections)
         
         # Save the consultant report
-        output_file = f"{query.replace(' ', '_')}_consultant_report.md"
+        output_file = f"{query.replace(' ', '_')}_comprehensive_report.md"
         with open(output_file, 'w', encoding='utf-8') as file:
             file.write(final_report)
         
-        print(f"\nConsultant report has been generated and saved to {output_file}")
+        print(f"\nComprehensive report has been generated and saved to {output_file}")
         self.update_progress("Report complete!", 100)
         return output_file
