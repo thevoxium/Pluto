@@ -20,7 +20,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-
+import chromadb
 # Import configuration
 from config import get_config
 
@@ -48,6 +48,7 @@ class ConsultantReportGenerator:
         os.makedirs(self.temp_dir, exist_ok=True)
         
         # Callback for reporting progress
+        chromadb.api.client.SharedSystemClient.clear_system_cache()
         self.progress_callback = progress_callback
         
         # Track search results for UI display
