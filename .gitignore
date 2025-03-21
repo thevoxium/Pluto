@@ -2,3 +2,4 @@ temp
 *.md 
 !README.md
 __pycache__
+static/reports
